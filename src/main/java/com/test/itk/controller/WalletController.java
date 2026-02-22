@@ -1,7 +1,7 @@
 package com.test.itk.controller;
 
 import com.test.itk.dto.WalletOperationRequest;
-import com.test.itk.entity.Wallet;
+import com.test.itk.dto.WalletResponse;
 import com.test.itk.service.WalletService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,9 +27,9 @@ public class WalletController {
 
     @GetMapping("/wallets/{id}")
     public ResponseEntity<?> getWallet (@PathVariable UUID id) {
-        Wallet wallet = walletService.getWallet(id);
+        WalletResponse wallet = walletService.getWallet(id);
         return ResponseEntity.ok(Map.of(
-                "walletId", wallet.getId(),
-                "balance", wallet.getBalance()));
+                "walletId", wallet.id(),
+                "balance", wallet.balance()));
     }
 }

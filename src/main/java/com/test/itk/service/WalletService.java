@@ -1,6 +1,7 @@
 package com.test.itk.service;
 
 import com.test.itk.dto.WalletOperationRequest;
+import com.test.itk.dto.WalletResponse;
 import com.test.itk.entity.OperationType;
 import com.test.itk.entity.Wallet;
 import com.test.itk.exception.InsufficientFundsException;
@@ -23,6 +24,10 @@ public class WalletService {
 
         Wallet wallet = walletRepository.findByIdForUpdate(request.walletId()).orElseThrow(() -> new WalletNotFoundException("Этот кошелек не существует"));
 
+        if (request.amount().signum() <= 0) {
+            throw new IllegalArgumentException("Amount must be positive");
+        }
+
         if (request.operationType() == OperationType.WITHDRAW) {
             if (wallet.getBalance().compareTo(request.amount()) < 0)
                 throw new InsufficientFundsException("Недостаточно средств. На счету: " + wallet.getBalance());
@@ -33,7 +38,9 @@ public class WalletService {
         wallet.setBalance(wallet.getBalance().add(request.amount()));
     }
 
-    public Wallet getWallet (UUID id){
-        return walletRepository.findById(id).orElseThrow(() -> new WalletNotFoundException("Этот кошелек не существует"));
+    public WalletResponse getWallet (UUID id){
+
+        Wallet wallet = walletRepository.findById(id).orElseThrow(() -> new WalletNotFoundException("Этот кошелек не существует"));
+        return new WalletResponse(wallet.getId(), wallet.getBalance());
     }
 }

@@ -12,11 +12,11 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -28,17 +28,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class WalletIntegrationTest {
 
-    // Контейнер должен быть статическим и помечен @Container
-    // Testcontainers инициализирует его ДО загрузки контекста Spring
-    @Container
-    private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
-            .withDatabaseName("wallet")
-            .withUsername("wallet")
-            .withPassword("wallet");
+    private static final PostgreSQLContainer<?> postgres;
+
+    static {
+        postgres = new PostgreSQLContainer<>("postgres:15")
+                .withDatabaseName("wallet")
+                .withUsername("wallet")
+                .withPassword("wallet");
+        postgres.start();
+    }
 
     @DynamicPropertySource
     static void overrideProps(DynamicPropertyRegistry registry) {
-        // Теперь контейнер уже запущен к моменту вызова этого метода
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
@@ -57,10 +58,16 @@ public class WalletIntegrationTest {
 
     @BeforeEach
     void setup() {
-        // Создаем кошелек перед каждым тестом
         walletId = UUID.randomUUID();
         Wallet wallet = new Wallet(walletId, BigDecimal.valueOf(1000));
         walletRepository.save(wallet);
+    }
+
+    @AfterAll
+    static void stopContainer() {
+        if (postgres != null && postgres.isRunning()) {
+            postgres.stop();
+        }
     }
 
     @Test
@@ -142,6 +149,7 @@ public class WalletIntegrationTest {
         );
 
         Assertions.assertEquals(200, response.getStatusCode().value());
+        Assertions.assertTrue(response.getBody().contains("1000"));
     }
 
     @Test
@@ -168,7 +176,72 @@ public class WalletIntegrationTest {
         executor.awaitTermination(30, TimeUnit.SECONDS);
 
         Wallet wallet = walletRepository.findById(walletId).orElseThrow();
-        // Начальный баланс 1000 + 50 * 10 = 1500
         assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1500));
+    }
+
+    @Test
+    void testConcurrentWithdrawals() throws InterruptedException {
+        int threads = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+
+        for (int i = 0; i < threads; i++) {
+            executor.submit(() -> {
+                WalletOperationRequest req = new WalletOperationRequest(
+                        walletId,
+                        OperationType.WITHDRAW,
+                        BigDecimal.valueOf(10)
+                );
+                try {
+                    restTemplate.postForEntity(
+                            "http://localhost:" + port + "/api/v1/wallet",
+                            req,
+                            String.class
+                    );
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(30, TimeUnit.SECONDS);
+
+        Wallet wallet = walletRepository.findById(walletId).orElseThrow();
+        assertThat(wallet.getBalance()).isGreaterThanOrEqualTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void testConcurrentMixedOperations() throws InterruptedException {
+        int threads = 100;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch endLatch = new CountDownLatch(threads);
+
+        for (int i = 0; i < threads; i++) {
+            final boolean isDeposit = i % 2 == 0;
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    WalletOperationRequest req = new WalletOperationRequest(
+                            walletId,
+                            isDeposit ? OperationType.DEPOSIT : OperationType.WITHDRAW,
+                            BigDecimal.valueOf(10)
+                    );
+                    restTemplate.postForEntity(
+                            "http://localhost:" + port + "/api/v1/wallet",
+                            req,
+                            String.class
+                    );
+                } catch (Exception ignored) {
+                } finally {
+                    endLatch.countDown();
+                }
+            });
+        }
+
+        startLatch.countDown();
+        endLatch.await(30, TimeUnit.SECONDS);
+
+        Wallet wallet = walletRepository.findById(walletId).orElseThrow();
+        assertThat(wallet.getBalance()).isGreaterThanOrEqualTo(BigDecimal.ZERO);
     }
 }

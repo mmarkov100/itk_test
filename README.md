@@ -6,8 +6,8 @@ REST API сервис для управления кошельком с подд
 ### 1️⃣ Клонировать репозиторий
 
 ```bash
-git clone <repository-url>
-cd <project-folder>
+git clone https://github.com/mmarkov100/itk_test
+cd itk_test
 ```
 
 ### 2️⃣ Запуск через Docker Compose

@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: itk
+  datasource:
+    url: jdbc:postgresql://postgres:5432/wallet
+    username: wallet
+    password: wallet
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml

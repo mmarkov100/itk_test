@@ -13,6 +13,7 @@ cd itk_test
 ### 2️⃣ Запуск через Docker Compose
 
 ```bash
+mvn clean package
 docker-compose up --build
 ```
 
